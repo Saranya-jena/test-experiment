@@ -1,0 +1,142 @@
+kind: Workflow
+apiVersion: argoproj.io/v1alpha1
+metadata:
+  name: pepesadge
+  namespace: hce
+  creationTimestamp: null
+  labels:
+    infra_id: a2aedcaa-b9bc-4a8b-a81e-d0e170c6b4e9
+    revision_id: 0b40f6fc-84f8-4f4a-8bdf-9fd17b6f95cf
+    workflow_id: 6277b537-e218-41e5-96d3-5f9a7db010e1
+    workflows.argoproj.io/controller-instanceid: a2aedcaa-b9bc-4a8b-a81e-d0e170c6b4e9
+spec:
+  templates:
+    - name: pepesadge
+      inputs: {}
+      outputs: {}
+      metadata: {}
+      steps:
+        - - name: pod-delete-pru
+            template: pod-delete-pru
+            arguments: {}
+        - - name: cleanup-chaos-resources
+            template: cleanup-chaos-resources
+            arguments: {}
+    - name: cleanup-chaos-resources
+      inputs: {}
+      outputs: {}
+      metadata: {}
+      container:
+        name: ""
+        image: docker.io/harness/chaos-go-runner:1.45.0
+        command:
+          - sh
+          - -c
+        args:
+          - kubectl delete chaosengine -l workflow_run_id={{workflow.uid}} -n
+            {{workflow.parameters.adminModeNamespace}}
+        resources: {}
+    - name: pod-delete-pru
+      inputs:
+        artifacts:
+          - name: pod-delete-pru
+            path: /tmp/chaosengine-pod-delete-pru.yaml
+            raw:
+              data: >
+                apiVersion: litmuschaos.io/v1alpha1
+
+                kind: ChaosEngine
+
+                metadata:
+                  namespace: "{{workflow.parameters.adminModeNamespace}}"
+                  labels:
+                    name: pod-delete
+                    app.kubernetes.io/part-of: litmus
+                    app.kubernetes.io/component: experiment-job
+                    app.kubernetes.io/version: ci
+                    workflow_run_id: "{{ workflow.uid }}"
+                    workflow_name: pepesadge
+                  annotations:
+                    probeRef: '[{"probeID":"default-harness-k8s-system-cmd-probe","mode":"SOT"}]'
+                  generateName: pod-delete-pru
+                spec:
+                  appinfo:
+                    appns: hce
+                    applabel: app=chaos-exporter
+                    appkind: deployment
+                  engineState: active
+                  terminationGracePeriodSeconds: 30
+                  chaosServiceAccount: litmus-admin
+                  experiments:
+                    - name: pod-delete
+                      image: docker.io/harness/chaos-go-runner:1.45.0
+                      imagePullPolicy: Always
+                      args:
+                        - -c
+                        - ./experiments -name pod-delete
+                      command:
+                        - /bin/bash
+                      spec:
+                        components:
+                          env:
+                            - name: TOTAL_CHAOS_DURATION
+                              value: "30"
+                            - name: RAMP_TIME
+                              value: ""
+                            - name: FORCE
+                              value: "false"
+                            - name: CHAOS_INTERVAL
+                              value: "10"
+                            - name: PODS_AFFECTED_PERC
+                              value: ""
+                            - name: TARGET_CONTAINER
+                              value: ""
+                            - name: TARGET_PODS
+                              value: ""
+                            - name: DEFAULT_HEALTH_CHECK
+                              value: "false"
+                            - name: NODE_LABEL
+                              value: ""
+                            - name: SEQUENCE
+                              value: parallel
+                          experimentImagePullSecrets:
+                            - name: test
+                          securityContext:
+                            podSecurityContext:
+                              runAsUser: 2000
+                              runAsGroup: 0
+                  jobCleanUpPolicy: delete
+                  components:
+                    runner:
+                      imagePullSecrets:
+                        - name: test
+      outputs: {}
+      metadata:
+        labels:
+          weight: "10"
+      container:
+        name: ""
+        image: docker.io/harness/chaos-go-runner:1.45.0
+        command:
+          - ./chaos-checker
+        args:
+          - -file=/tmp/chaosengine-pod-delete-pru.yaml
+          - -saveName=/tmp/engine-name
+        resources: {}
+  entrypoint: pepesadge
+  arguments:
+    parameters:
+      - name: adminModeNamespace
+        value: hce
+  serviceAccountName: argo-chaos
+  imagePullSecrets:
+    - name: test
+  podGC:
+    strategy: OnWorkflowCompletion
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 0
+    runAsNonRoot: true
+status:
+  startedAt: null
+  finishedAt: null
